@@ -1,0 +1,15 @@
+{
+    "manifest_version": 2,
+    "name": "Bottom",
+    "version": "0.1",
+    "description": "标签显示优化",
+    "homepage_url": "https://github.com/Sinoftj/Bottom",
+    "applications": {
+        "zotero": {
+            "id": "sinoftj_bottom",
+            "update_url": "https://github.com/releases/latest/download/update.json",
+            "strict_min_version": "7.0",
+            "strict_max_version": "8.*"
+        }
+    }
+}

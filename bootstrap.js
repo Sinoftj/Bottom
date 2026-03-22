@@ -111,7 +111,7 @@ class TagSelectorTopPlugin {
         transition: background 0.15s !important;
       }
 
-      #zotero-tag-selector .tag-quick-filter-btn:hover {
+      #zotero-tag-selector .tag-quick-filter-btn:hover:not(:disabled) {
         background: rgba(0, 0, 0, 0.18) !important;
       }
 
@@ -137,6 +137,12 @@ class TagSelectorTopPlugin {
         fill: currentColor !important;
       }
 
+      #zotero-tag-selector .tag-quick-filter-btn.letter-disabled {
+        opacity: 0.3 !important;
+        cursor: not-allowed !important;
+        pointer-events: none !important;
+      }
+
       #zotero-tag-selector .tag-selector-list-container {
         flex: 1 1 0 !important;
         min-height: 0 !important;
@@ -146,7 +152,11 @@ class TagSelectorTopPlugin {
       #zotero-tag-selector .tag-selector-list {
         width: 100% !important;
         height: 100% !important;
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(128,128,128,0.3) transparent !important;
       }
+
+
     `;
     doc.documentElement.appendChild(styleEl);
 
@@ -156,7 +166,11 @@ class TagSelectorTopPlugin {
       mutationObserver: null,
       activeLetter: null,
       _originalGetTagsAndScope: null,
+      _originalHandleTagSelected: null,
+      _originalGetContainerDimensions: null,
+      _tagClickHooked: false,
       _clearBtn: null,
+      _pendingRaf: null,
     };
     this._windowData.set(win, entry);
 
@@ -175,12 +189,19 @@ class TagSelectorTopPlugin {
       const doc = win.document;
       const tagSelector = win.ZoteroPane?.tagSelector;
 
-      if (tagSelector && entry._originalGetTagsAndScope) {
-        tagSelector.getTagsAndScope = entry._originalGetTagsAndScope;
-        entry._originalGetTagsAndScope = null;
-        tagSelector.getTagsAndScope().then(result => {
-          tagSelector.setState({ tags: result.tags, scope: result.scope });
-        }).catch(() => {});
+      if (tagSelector) {
+        if (entry._originalGetTagsAndScope) {
+          tagSelector.getTagsAndScope = entry._originalGetTagsAndScope;
+          entry._originalGetTagsAndScope = null;
+        }
+        if (entry._originalHandleTagSelected) {
+          tagSelector.handleTagSelected = entry._originalHandleTagSelected;
+          entry._originalHandleTagSelected = null;
+        }
+        if (entry._originalGetContainerDimensions) {
+          tagSelector.getContainerDimensions = entry._originalGetContainerDimensions;
+          entry._originalGetContainerDimensions = null;
+        }
       }
 
       const container = doc.querySelector("#zotero-tag-selector .tag-selector");
@@ -210,6 +231,8 @@ class TagSelectorTopPlugin {
     const filterPane = doc.querySelector("#zotero-tag-selector .tag-selector-filter-pane");
     if (container && filterPane) {
       this._hookGetTagsAndScope(win, entry);
+      this._hookTagClick(win, entry);
+      this._hookGetContainerDimensions(win, entry);
       this._moveFilterPaneToTop(doc, win, entry, container, filterPane);
       this._setupMutationObserver(win, entry, container);
       return;
@@ -222,6 +245,8 @@ class TagSelectorTopPlugin {
         initObserver.disconnect();
         entry.initObserver = null;
         this._hookGetTagsAndScope(win, entry);
+        this._hookTagClick(win, entry);
+        this._hookGetContainerDimensions(win, entry);
         this._moveFilterPaneToTop(doc, win, entry, c, fp);
         this._setupMutationObserver(win, entry, c);
       }
@@ -237,7 +262,7 @@ class TagSelectorTopPlugin {
     if (entry._originalGetTagsAndScope) return;
 
     const original = tagSelector.getTagsAndScope.bind(tagSelector);
-    entry._originalGetTagsAndScope = tagSelector.getTagsAndScope;
+    entry._originalGetTagsAndScope = original;
 
     const plugin = this;
 
@@ -246,13 +271,62 @@ class TagSelectorTopPlugin {
 
       if (!entry.activeLetter) return result;
 
+      const selected = tagSelector.selectedTags || new Set();
+
       const filtered = result.tags.filter(t => {
         if (!t || typeof t.tag !== "string") return false;
-        if (t.type !== 0) return true;
+        if (selected.has(t.tag)) return true;
         return plugin._getFirstLetter(t.tag) === entry.activeLetter;
       });
 
       return { ...result, tags: filtered };
+    };
+  }
+
+  _hookGetContainerDimensions(win, entry) {
+    const tagSelector = win.ZoteroPane?.tagSelector;
+    if (!tagSelector) return;
+    if (entry._originalGetContainerDimensions) return;
+
+    entry._originalGetContainerDimensions = tagSelector.getContainerDimensions.bind(tagSelector);
+
+    tagSelector.getContainerDimensions = function () {
+      const result = entry._originalGetContainerDimensions();
+      const doc = win.document;
+      const quickFilter = doc.getElementById("tag-quick-filter");
+      if (quickFilter) {
+        const qfHeight = quickFilter.getBoundingClientRect().height;
+        result.height = Math.max(0, result.height - qfHeight);
+      }
+      return result;
+    };
+  }
+
+  _hookTagClick(win, entry) {
+    const tagSelector = win.ZoteroPane?.tagSelector;
+    if (!tagSelector || entry._tagClickHooked) return;
+    entry._tagClickHooked = true;
+    entry._originalHandleTagSelected = tagSelector.handleTagSelected;
+
+    const plugin = this;
+    const originalHandleTagSelected = entry._originalHandleTagSelected.bind(tagSelector);
+
+    tagSelector.handleTagSelected = function (tag) {
+      if (entry.activeLetter) {
+        const ddoc = win.document;
+        const allBtns = ddoc.querySelectorAll("#zotero-tag-selector .tag-quick-filter-btn");
+        allBtns.forEach(b => b.classList.remove("active"));
+        entry.activeLetter = null;
+        plugin._updateClearBtn(entry);
+      }
+      const result = originalHandleTagSelected(tag);
+      win.setTimeout(() => {
+        if (tagSelector.handleResize) {
+          tagSelector.handleResize();
+        }
+        plugin._updateLetterButtonsFromCurrent(win, entry);
+      }, 100);
+      return result;
     };
   }
 
@@ -303,13 +377,18 @@ class TagSelectorTopPlugin {
             allBtns.forEach(b => b.classList.remove("active"));
             entry.activeLetter = null;
             this._updateClearBtn(entry);
-            this._triggerRefresh(win.ZoteroPane?.tagSelector);
+            const tagSelector = win.ZoteroPane?.tagSelector;
+            if (tagSelector) {
+              tagSelector.deselectAll();
+              win.setTimeout(() => {
+                this._updateLetterButtonsFromCurrent(win, entry);
+              }, 100);
+            }
           });
 
         } else {
           btn.textContent = item;
           btn.dataset.letter = item;
-
           btn.addEventListener("click", () => {
             this._onLetterClick(win, entry, item, btn, doc);
           });
@@ -328,7 +407,8 @@ class TagSelectorTopPlugin {
       if (tagSelector?.handleResize) {
         tagSelector.handleResize();
       }
-    }, 100);
+      this._updateLetterButtonsFromCurrent(win, entry);
+    }, 200);
   }
 
   _updateClearBtn(entry) {
@@ -340,18 +420,49 @@ class TagSelectorTopPlugin {
     }
   }
 
+  _updateLetterButtonsFromCurrent(win, entry) {
+    const tagSelector = win.ZoteroPane?.tagSelector;
+    if (!tagSelector || !entry._originalGetTagsAndScope) return;
+
+    entry._originalGetTagsAndScope.call(tagSelector).then(fullResult => {
+      this._updateLetterButtons(win, entry, fullResult.tags);
+    }).catch(e => Zotero.logError(e));
+  }
+
+  _updateLetterButtons(win, entry, availableTags) {
+    const doc = win.document;
+    const allBtns = doc.querySelectorAll("#zotero-tag-selector .tag-quick-filter-btn[data-letter]");
+    if (!allBtns.length) return;
+
+    const availableLetters = new Set();
+    for (const t of availableTags) {
+      if (!t || typeof t.tag !== "string") continue;
+      const letter = this._getFirstLetter(t.tag);
+      if (letter) availableLetters.add(letter);
+    }
+
+    allBtns.forEach(btn => {
+      const letter = btn.dataset.letter;
+      if (!availableLetters.has(letter)) {
+        btn.classList.add("letter-disabled");
+        btn.disabled = true;
+      } else {
+        btn.classList.remove("letter-disabled");
+        btn.disabled = false;
+      }
+    });
+  }
+
   _onLetterClick(win, entry, letter, btn, doc) {
-    const allBtns = doc.querySelectorAll(
-      "#zotero-tag-selector .tag-quick-filter-btn"
-    );
+    const allBtns = doc.querySelectorAll("#zotero-tag-selector .tag-quick-filter-btn");
     const tagSelector = win.ZoteroPane?.tagSelector;
     if (!tagSelector) return;
 
     if (entry.activeLetter === letter) {
-     entry.activeLetter = null;
+      entry.activeLetter = null;
       allBtns.forEach(b => b.classList.remove("active"));
       this._updateClearBtn(entry);
-      this._triggerRefresh(tagSelector);
+      this._triggerRefresh(tagSelector, win, entry);
       return;
     }
 
@@ -359,19 +470,7 @@ class TagSelectorTopPlugin {
     allBtns.forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     this._updateClearBtn(entry);
-    this._triggerRefresh(tagSelector);
-  }
-
-  _triggerRefresh(tagSelector) {
-    if (!tagSelector) return;
-    tagSelector.getTagsAndScope().then(result => {
-      tagSelector.setState({
-        tags: result.tags,
-        scope: result.scope,
-      });
-    }).catch(e => {
-      Zotero.logError(e);
-    });
+    this._triggerRefresh(tagSelector, win, entry);
   }
 
   _getPinyinFirstLetter(char) {
@@ -400,6 +499,27 @@ class TagSelectorTopPlugin {
     if (/[\u4e00-\u9fa5]/.test(first)) return this._getPinyinFirstLetter(first);
     return null;
   }
+
+  _triggerRefresh(tagSelector, win, entry) {
+    if (!tagSelector) return;
+    tagSelector.getTagsAndScope().then(result => {
+      tagSelector.setState({
+        tags: result.tags,
+        scope: result.scope,
+      });
+      if (win) {
+        win.setTimeout(() => {
+          if (tagSelector.handleResize) {
+            tagSelector.handleResize();
+          }
+          if (entry) {
+            this._updateLetterButtonsFromCurrent(win, entry);
+          }
+        }, 50);
+      }
+    }).catch(e => Zotero.logError(e));
+  }
+
 
   _setupMutationObserver(win, entry, container) {
     if (entry.mutationObserver) entry.mutationObserver.disconnect();

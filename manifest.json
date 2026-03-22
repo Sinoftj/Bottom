@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "Bottom",
-    "version": "0.1",
+    "version": "1.0",
     "description": "标签显示优化",
     "homepage_url": "https://github.com/Sinoftj/Bottom",
     "applications": {

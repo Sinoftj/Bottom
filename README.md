@@ -6,7 +6,7 @@
 4️⃣支持一键清空选择的标签<br>
 5️⃣适用于中文和英文<br>
 <br>
-⚠️仅在MAC和Zotero 8.*上进行了运行测试<br>
+⚠️仅在MAC和Zotero8上进行了运行测试<br>
 <br>
 **Feature Overview**<br>
 Move the search button to the top of the tag searcher<br>
@@ -15,7 +15,7 @@ Click a letter to quickly filter for the desired tag; supports **sequential filt
 Supports clearing selected tags with a single click<br>
 Works for both Chinese and English<br>
 <br>
-⚠️Just Test on MAC and Zotero 8.*<br>
+⚠️Just Test on MAC and Zotero8<br>
 <br>
 <img width="2128" height="1934" alt="image" src="https://github.com/user-attachments/assets/7ce1afbe-6fe6-4feb-8d9b-b5dfabbf0660" />
 

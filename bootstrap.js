@@ -111,7 +111,7 @@ class TagSelectorTopPlugin {
         transition: background 0.15s !important;
       }
 
-      #zotero-tag-selector .tag-quick-filter-btn:hover:not(:disabled) {
+      #zotero-tag-selector .tag-quick-filter-btn:hover:not(:disabled):not(.active) {
         background: rgba(0, 0, 0, 0.18) !important;
       }
 

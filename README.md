@@ -6,7 +6,7 @@
 4️⃣支持**一键清空**选择的标签<br>
 5️⃣适用于中文和英文<br>
 <br>
-⚠️仅在MAC和Zotero8上进行了运行测试<br>
+⚠️仅在MAC和Zotero8上进行了测试<br>
 <br>
 **Feature Overview**<br>
 <br>
